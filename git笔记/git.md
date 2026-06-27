@@ -22,7 +22,7 @@
 git log --oneline --all 查看在线所有的提交记录
 #### cherry pick 拣选提交
 cherry-pick：挑提交。(git cherry-pick C D E。  git cherry-pick -n C D E     git commit -m "合并多个 cherry-pick 改动"   -n 是 --no-commit，意思是只把改动拿过来，不自动提交。)
-merge --squash：把一个分支的改动压成一个提交合进来。
+merge --squash：把一个分支的改动压成一个提交合进来。（git merge --squash feature）
 rebase -i：整理/压缩当前分支已有提交。
 #### stash 临时存储
 git stash 临时存储；   git stash pop 撤销临时存储

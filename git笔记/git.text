@@ -22,3 +22,13 @@
 git diff 哈希id 哈希id（git diff --stat(显示每个文件改了多少行的摘要) / --name-status(显示变更文件名 + 变化类型)）
 
 ## 关于 分支的操作
+git branch xxx（新建分支.  git branch --list 查看本地分支  --all 查看本地+远程分支）
+切换分支：git checkout xxx / git switch xxx
+创建并切换分支：git checkout -b xxx / git switch -c xxx
+
+## github的玩法
+`?`会打开快捷键速查表
+`.`打开在线vscode查看项目
+`/`快速进行搜索
+`T`快速定位到仓库的文件搜索光标
+`L`快速定位到文件中的某一行

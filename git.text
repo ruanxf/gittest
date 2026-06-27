@@ -1,18 +1,24 @@
 # 从0到1深入理解git
 
-## 基本操作来一下
+## 仓库：基本初始化及提交代码的操作
 `git init` 初始化本地仓库
 `git add .` 暂存所有代码(git add xxx  这个没人会用单个暂存的命令吧)
 `git commit -m ""` 提交代码（git commit --amend合并到上一个提交中）
 `git push` 提交到远程仓库（git push origin xxx 提交到远程仓库的xxx分支）
 
-## 本地开发快捷命令
+## 关于 撤销回退等操作
+### 本地开发快捷命令
 `git reset HEAD^` 撤销上一次提交的代码 不回暂存区
 `git reset --soft HEAD^` 撤销上一次提交的代码 并回到暂存区（`git reset --soft HEAD~1` 这种看起来也方便，数字代表撤回几个） 
 
-## 撤回远程代码
-### ⚠️禁用不安全的操作
+### 撤回远程代码
+#### ⚠️禁用不安全的操作(可以把仓库强制回退到某个历史状态，适合单人随便玩玩)
 仅本地查看：git reset xxx（xxx是提交的哈希加密id）
 推送远程仓库：git push --force-with-lease origin xxx（xxx是远程分支名字。 强行提交：--force-with-lease 比 --force 安全一点，因为它会先检查：远程分支有没有被别人更新过。如果别人刚推了新代码，它通常会拒绝覆盖，避免你误删别人的提交。）
-### 🚩安全操作
+#### 🚩安全操作（生成反向commit，抵消某次commit，适合多人协作的分支）
 撤销远程提交的那个分支：git revert xxx。  有冲突就修改冲突，然后git push origin xxx 就好了
+
+### 分支对比（基本没用，vscode随便装个git插件都可视化好一点）
+git diff 哈希id 哈希id（git diff --stat(显示每个文件改了多少行的摘要) / --name-status(显示变更文件名 + 变化类型)）
+
+## 关于 分支的操作

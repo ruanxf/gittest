@@ -16,7 +16,10 @@
 仅本地查看：git reset xxx（xxx是提交的哈希加密id）
 推送远程仓库：git push --force-with-lease origin xxx（xxx是远程分支名字。 强行提交：--force-with-lease 比 --force 安全一点，因为它会先检查：远程分支有没有被别人更新过。如果别人刚推了新代码，它通常会拒绝覆盖，避免你误删别人的提交。）
 #### 🚩安全操作（生成反向commit，抵消某次commit，适合多人协作的分支）
-撤销远程提交的那个分支：git revert xxx。  有冲突就修改冲突，然后git push origin xxx 就好了
+撤销远程提交的那个分支：git revert xxx。  有冲突就修改冲突(解决完冲突git revert --continue；   要是不想解决可以暂时git revert --abort撤销到冲突之前状态)，然后git push origin xxx 就好了
+注：如果是合并提交的话，git show --pretty=raw 哈希idxxx 可以看比较一下parent aaa111... parent bbb222...
+一般都会选择这个：git revert -m 1 merge提交 = 我站在第 1 个父提交这条主线上，撤销 merge 带进来的变化
+不选这个：git revert -m 2 merge提交 = 我站在第 2 个父提交这条主线上，撤销另一边的变化
 
 ### 其他玩法
 git log --oneline --all 查看在线所有的提交记录
@@ -27,6 +30,8 @@ rebase -i：整理/压缩当前分支已有提交。
 #### stash 临时存储
 git stash 临时存储；   git stash pop 撤销临时存储
 #### rebase 变基
+git rebase main（得强制推送git push -f。 比merge强一点点就是分支历史干净，少了一个merge提交记录）
+
 ##### 【场景】我在 feature 开发，想基于本地 main 的最新代码继续开发。（不联网，基于本地 main 重放当前分支提交）
 再其他分支例如feature分支上面，git rebase main（把当前 feature 分支上的提交，重新放到本地 main 分支最新提交后面。）
 （得强制推送git push -f。  比merge强一点点就是分支历史干净，少了一个merge提交记录）

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+
+<meta charset="UTF-8">
+
+<title>HLS Player</title>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<style>
+
+body{
+    background:#111;
+    margin:0;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    min-height:100vh;
+    gap:16px;
+    font-family:system-ui,-apple-system,"PingFang SC",sans-serif;
+}
+
+video{
+    width:90%;
+    max-width:1200px;
+    background:#000;
+}
+
+.bar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:center;
+    justify-content:center;
+}
+
+.bar button,.bar select{
+    background:#222;
+    color:#eee;
+    border:1px solid #444;
+    padding:6px 12px;
+    border-radius:6px;
+    cursor:pointer;
+    font-size:14px;
+}
+
+.bar button:hover{background:#333;}
+
+.bar button.active{
+    background:#0a84ff;
+    border-color:#0a84ff;
+    color:#fff;
+}
+
+#download{
+    background:#c62828;
+    border-color:#c62828;
+    color:#fff;
+}
+
+#download:disabled{opacity:.5;cursor:not-allowed;}
+
+#status{
+    color:#aaa;
+    font-size:13px;
+    min-height:18px;
+}
+
+.label{color:#888;font-size:13px;}
+
+</style>
+
+</head>
+
+<body>
+
+<video id="video" controls autoplay></video>
+
+<div class="bar">
+    <span class="label">线路</span>
+    <select id="source"></select>
+    <span class="label">倍速</span>
+    <span id="speeds"></span>
+</div>
+
+<div class="bar">
+    <button id="download">下载视频</button>
+    <span id="status"></span>
+</div>
+
+<script>
+const obj = {
+    k1: "https://v-vod-k.xiaoeknow.com/a8307e36f7a64aeeae086cc157bb356b/appdy3bnnsj9558/video/b_u_cjs351mps1bshnjvntq0/mrydwok80oid/drm/main.m3u8?sign=0335054fd7308603422ceaddcfd897e1&t=6a676b45&us=WGaTbCPVpx",
+    k2: "https://v-vod-k.xiaoeknow.com/a8307e36f7a64aeeae086cc157bb356b/appdy3bnnsj9558/video/b_u_cjs351mps1bshnjvntq0/mrydwok80ywf/drm/main.m3u8?sign=107769a94879363452fd4776b23aaadb&t=6a676afe&us=FLNXLUzfRD",
+    k3: "https://v-vod-k.xiaoeknow.com/a8307e36f7a64aeeae086cc157bb356b/appdy3bnnsj9558/video/b_u_cjs351mps1bshnjvntq0/mrydwok80lg3/drm/main.m3u8?sign=98cdc83c80437f3fefb87f4e6f0fe013&t=6a676fc6&us=KnnaehYYcC",
+    k4: "https://v-vod-k.xiaoeknow.com/a8307e36f7a64aeeae086cc157bb356b/appdy3bnnsj9558/video/b_u_cjs351mps1bshnjvntq0/mrydwok801sf/drm/main.m3u8?sign=8d8e7ebb45075bae4f7ca35888486d2c&t=6a676ff9&us=iFwWABbIWy",
+    k5: "https://v-vod-k.xiaoeknow.com/a8307e36f7a64aeeae086cc157bb356b/appdy3bnnsj9558/video/b_u_cjs351mps1bshnjvntq0/mrydwok80gnt/drm/main.m3u8?sign=db709026f2fed74edce853c03fc2790d&t=6a677011&us=YfuzttkQUd"
+};
+
+const video = document.getElementById("video");
+const sourceSel = document.getElementById("source");
+const speedsEl = document.getElementById("speeds");
+const statusEl = document.getElementById("status");
+const downloadBtn = document.getElementById("download");
+
+let currentUrl = obj.k3;
+let hls = null;
+
+/* ---------- 线路选择 ---------- */
+Object.keys(obj).forEach(k => {
+    const opt = document.createElement("option");
+    opt.value = k;
+    opt.textContent = k;
+    if (obj[k] === currentUrl) opt.selected = true;
+    sourceSel.appendChild(opt);
+});
+
+sourceSel.onchange = () => {
+    currentUrl = obj[sourceSel.value];
+    loadSource(currentUrl);
+};
+
+/* ---------- 倍速控制 ---------- */
+const speeds = [0.5, 1, 1.25, 1.5, 2, 3];
+const speedBtns = [];
+speeds.forEach(s => {
+    const btn = document.createElement("button");
+    btn.textContent = s + "x";
+    btn.onclick = () => setSpeed(s);
+    speedsEl.appendChild(btn);
+    speedBtns.push({ btn, s });
+});
+
+// 长按倍速：按住 → 用 baseSpeed 显示，松开 → 恢复 baseSpeed
+let baseSpeed = 1;
+let holding = false;
+const HOLD_RATE = 3;
+
+function setSpeed(s) {
+    baseSpeed = s;              // 记住用户选择的基础倍速
+    if (!holding) video.playbackRate = s;
+    speedBtns.forEach(({ btn, s: bs }) => btn.classList.toggle("active", bs === s));
+}
+setSpeed(1);
+
+// 按住方向键（右）临时 3 倍速，松开还原到用户设定的基础倍速
+// 用 capture 阶段并 preventDefault，覆盖 <video controls> 默认的左右键快进/快退
+document.addEventListener("keydown", e => {
+    if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (e.repeat) return;          // 忽略长按产生的重复事件
+        holding = true;
+        video.playbackRate = HOLD_RATE;
+        statusEl.textContent = HOLD_RATE + "x 加速中…";
+    }
+}, true);
+
+document.addEventListener("keyup", e => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        holding = false;
+        video.playbackRate = baseSpeed;
+        statusEl.textContent = "";
+    }
+}, true);
+
+/* ---------- 播放 ---------- */
+function loadSource(url) {
+    if (Hls.isSupported()) {
+        if (hls) hls.destroy();
+        hls = new Hls();
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+    } else {
+        video.src = url;
+        video.play();
+    }
+}
+loadSource(currentUrl);
+
+/* ---------- 下载 ---------- */
+function hexToBytes(hex) {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    return bytes;
+}
+
+// HLS 默认 IV：媒体序号的 16 字节大端表示
+function seqIv(seq) {
+    const iv = new Uint8Array(16);
+    const dv = new DataView(iv.buffer);
+    dv.setUint32(12, seq >>> 0, false);
+    return iv;
+}
+
+async function fetchText(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("HTTP " + r.status + " " + url);
+    return r.text();
+}
+
+// 解析 m3u8，返回 { segments:[{url,seq}], key, iv }
+async function parsePlaylist(m3u8Url) {
+    console.log(m3u8Url)
+    let text = await fetchText(m3u8Url);
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+    console.log(text, lines)
+
+    // master playlist -> 选第一个变体
+    if (lines.some(l => l.startsWith("#EXT-X-STREAM-INF"))) {
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith("#EXT-X-STREAM-INF")) {
+                const variant = new URL(lines[i + 1], m3u8Url).href;
+                return parsePlaylist(variant);
+            }
+        }
+    }
+
+    let key = null, iv = null;
+    const startSeqMatch = /#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec(text);
+    let seq = startSeqMatch ? parseInt(startSeqMatch[1], 10) : 0;
+    const segments = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.startsWith("#EXT-X-KEY")) {
+            const method = /METHOD=([^,]+)/.exec(line);
+            const uri = /URI="([^"]+)"/.exec(line);
+            const ivMatch = /IV=0x([0-9A-Fa-f]+)/.exec(line);
+            if (method && method[1] !== "NONE" && uri) {
+                const keyBuf = await (await fetch(new URL(uri[1], m3u8Url).href)).arrayBuffer();
+                key = await crypto.subtle.importKey("raw", keyBuf, { name: "AES-CBC" }, false, ["decrypt"]);
+                iv = ivMatch ? hexToBytes(ivMatch[1]) : null;
+            } else if (method && method[1].trim() === "NONE") {
+                key = null;
+            }
+        } else if (!line.startsWith("#")) {
+            segments.push({ url: new URL(line, m3u8Url).href, seq: seq++ });
+        }
+    }
+    return { segments, key, iv };
+}
+
+async function downloadWithConcurrency(segments, key, iv, onProgress) {
+    const parts = new Array(segments.length);
+    let done = 0;
+    let idx = 0;
+    const CONCURRENCY = 6;
+
+    async function worker() {
+        while (idx < segments.length) {
+            const my = idx++;
+            const seg = segments[my];
+            let buf = await (await fetch(seg.url)).arrayBuffer();
+            if (key) {
+                const useIv = iv || seqIv(seg.seq);
+                buf = await crypto.subtle.decrypt({ name: "AES-CBC", iv: useIv }, key, buf);
+            }
+            parts[my] = buf;
+            done++;
+            onProgress(done, segments.length);
+        }
+    }
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    return parts;
+}
+
+downloadBtn.onclick = async () => {
+    downloadBtn.disabled = true;
+    try {
+        statusEl.textContent = "解析播放列表…";
+        const { segments, key, iv } = await parsePlaylist(currentUrl);
+        if (!segments.length) throw new Error("未找到视频分片");
+
+        statusEl.textContent = `开始下载 ${segments.length} 个分片…`;
+        const parts = await downloadWithConcurrency(segments, key, iv, (done, total) => {
+            statusEl.textContent = `下载中 ${done}/${total} (${Math.round(done / total * 100)}%)`;
+        });
+
+        statusEl.textContent = "合并文件…";
+        const blob = new Blob(parts, { type: "video/mp2t" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "video-" + sourceSel.value + ".ts";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+
+        statusEl.textContent = `下载完成 (${(blob.size / 1048576).toFixed(1)} MB)。若无法播放，可用 ffmpeg 转封装为 mp4。`;
+    } catch (err) {
+        console.error(err);
+        statusEl.textContent = "下载失败：" + err.message;
+    } finally {
+        downloadBtn.disabled = false;
+    }
+};
+</script>
+
+</body>
+
+</html>

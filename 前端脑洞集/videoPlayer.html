@@ -225,10 +225,14 @@ async function parsePlaylist(m3u8Url) {
     const startSeqMatch = /#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec(text);
     let seq = startSeqMatch ? parseInt(startSeqMatch[1], 10) : 0;
     const segments = [];
+    let pendingDur = 0;   // 最近一个 #EXTINF 声明的分片时长（秒）
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        if (line.startsWith("#EXT-X-KEY")) {
+        if (line.startsWith("#EXTINF")) {
+            const d = /#EXTINF:([\d.]+)/.exec(line);
+            pendingDur = d ? parseFloat(d[1]) : 0;
+        } else if (line.startsWith("#EXT-X-KEY")) {
             const method = /METHOD=([^,]+)/.exec(line);
             const uri = /URI="([^"]+)"/.exec(line);
             const ivMatch = /IV=0x([0-9A-Fa-f]+)/.exec(line);
@@ -240,22 +244,38 @@ async function parsePlaylist(m3u8Url) {
                 key = null;
             }
         } else if (!line.startsWith("#")) {
-            segments.push({ url: new URL(line, m3u8Url).href, seq: seq++ });
+            segments.push({ url: new URL(line, m3u8Url).href, seq: seq++, dur: pendingDur });
+            pendingDur = 0;
         }
     }
     return { segments, key, iv };
 }
 
 async function downloadWithConcurrency(segments, key, iv, onProgress) {
+    // 反风控参数：模拟真人播放器的拉片节奏
+    const CONCURRENCY   = 1;      // 串行；如需稍快可调为 2
+    const TARGET_RATE   = 2;      // 目标"播放倍速"：间隔 ≈ 分片时长 / TARGET_RATE
+    const JITTER        = 0.3;    // 抖动幅度 ±30%
+    const FALLBACK_GAP  = 2.0;    // 拿不到分片时长时的兜底间隔（秒）
+    const PAUSE_EVERY   = [8, 20];// 每隔 N 段插入一次"暂停"，N 在这个区间随机
+    const PAUSE_RANGE   = [4, 12];// 暂停时长范围（秒）
+
     const parts = new Array(segments.length);
     let done = 0;
-    let idx = 0;
-    const CONCURRENCY = 6;
 
-    async function worker() {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const rand  = (a, b) => a + Math.random() * (b - a);
+    const jitter = base => base * (1 + (Math.random() * 2 - 1) * JITTER);
+
+    // 顺序发放任务；worker 之间共享游标，天然按 seq 顺序拉
+    let idx = 0;
+    let nextPauseAt = Math.floor(rand(PAUSE_EVERY[0], PAUSE_EVERY[1]));
+
+    async function worker(workerId) {
         while (idx < segments.length) {
             const my = idx++;
             const seg = segments[my];
+
             let buf = await (await fetch(seg.url)).arrayBuffer();
             if (key) {
                 const useIv = iv || seqIv(seg.seq);
@@ -264,10 +284,26 @@ async function downloadWithConcurrency(segments, key, iv, onProgress) {
             parts[my] = buf;
             done++;
             onProgress(done, segments.length);
+
+            if (done >= segments.length) break;
+
+            // 计算下一段前的间隔：分片时长 / 目标倍速，再加抖动
+            const dur = seg.dur > 0 ? seg.dur : FALLBACK_GAP;
+            let waitSec = jitter(dur / TARGET_RATE);
+
+            // 偶尔插入一次长停顿，模拟真人暂停/走神
+            if (done >= nextPauseAt && done < segments.length) {
+                const pauseSec = rand(PAUSE_RANGE[0], PAUSE_RANGE[1]);
+                waitSec += pauseSec;
+                nextPauseAt = done + Math.floor(rand(PAUSE_EVERY[0], PAUSE_EVERY[1]));
+                onProgress(done, segments.length, `暂停 ${pauseSec.toFixed(1)}s 模拟真人…`);
+            }
+
+            await sleep(waitSec * 1000);
         }
     }
 
-    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    await Promise.all(Array.from({ length: CONCURRENCY }, (_, i) => worker(i)));
     return parts;
 }
 
@@ -279,8 +315,13 @@ downloadBtn.onclick = async () => {
         if (!segments.length) throw new Error("未找到视频分片");
 
         statusEl.textContent = `开始下载 ${segments.length} 个分片…`;
-        const parts = await downloadWithConcurrency(segments, key, iv, (done, total) => {
-            statusEl.textContent = `下载中 ${done}/${total} (${Math.round(done / total * 100)}%)`;
+        const startTs = Date.now();
+        const parts = await downloadWithConcurrency(segments, key, iv, (done, total, note) => {
+            const pct = Math.round(done / total * 100);
+            const elapsed = (Date.now() - startTs) / 1000;
+            const eta = done > 0 ? (elapsed / done) * (total - done) : 0;
+            const etaStr = eta > 60 ? `${(eta / 60).toFixed(1)}min` : `${eta.toFixed(0)}s`;
+            statusEl.textContent = `下载中 ${done}/${total} (${pct}%) · 剩余约 ${etaStr}${note ? " · " + note : ""}`;
         });
 
         statusEl.textContent = "合并文件…";
